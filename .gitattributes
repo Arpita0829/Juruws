@@ -1,2 +1,632 @@
-# Auto detect text files and perform LF normalization
-* text=auto
+// ------------------------
+// BRAND CONFIG
+// ------------------------
+const BRAND = {
+  name: "J-U-R-U-W",
+  tagline: "Handcrafted wooden ramps & standees",
+  accent: "from nature, for your space",
+};
+
+// ------------------------
+// CATALOG — Edit your products here
+// ------------------------
+const PRODUCTS = [
+  {
+    id: "ramp-mini",
+    title: "Mini Wooden Ramp",
+    price: 1499,
+    mrp: 1799,
+    tags: ["ramp", "kids", "indoor"],
+    image: "https://images.unsplash.com/photo-1519710164239-da123dc03ef4?q=80&w=1200&auto=format&fit=crop",
+    thumb: "https://images.unsplash.com/photo-1519710164239-da123dc03ef4?q=80&w=600&auto=format&fit=crop",
+    desc: "Smooth edges, child-safe polish, compact size for play corners.",
+  },
+  {
+    id: "ramp-pro",
+    title: "Curved Balance Ramp",
+    price: 2799,
+    mrp: 3299,
+    tags: ["ramp", "balance", "curve"],
+    image: "https://images.unsplash.com/photo-1540575467063-178a50c2df87?q=80&w=1200&auto=format&fit=crop",
+    thumb: "https://images.unsplash.com/photo-1540575467063-178a50c2df87?q=80&w=600&auto=format&fit=crop",
+    desc: "Sturdy birch ply, supports kids & décor setups, satin finish.",
+  },
+  {
+    id: "standee-basic",
+    title: "Wooden Standee (A-Frame)",
+    price: 1999,
+    mrp: 2399,
+    tags: ["standee", "display", "event"],
+    image: "https://images.unsplash.com/photo-1460353581641-37baddab0fa2?q=80&w=1200&auto=format&fit=crop",
+    thumb: "https://images.unsplash.com/photo-1460353581641-37baddab0fa2?q=80&w=600&auto=format&fit=crop",
+    desc: "Perfect for markets, pop-ups, weddings. Custom engraving optional.",
+  },
+];
+
+// ------------------------
+// CART STATE
+// ------------------------
+function cartReducer(state, action) {
+  switch (action.type) {
+    case "INIT":
+      return action.payload || { items: [], note: "" };
+    case "ADD": {
+      const existing = state.items.find((i) => i.id === action.item.id);
+      let items;
+      if (existing) {
+        items = state.items.map((i) =>
+          i.id === action.item.id ? { ...i, qty: i.qty + (action.qty || 1) } : i
+        );
+      } else {
+        items = [...state.items, { ...action.item, qty: action.qty || 1 }];
+      }
+      return { ...state, items };
+    }
+    case "INC": {
+      const items = state.items.map((i) =>
+        i.id === action.id ? { ...i, qty: i.qty + 1 } : i
+      );
+      return { ...state, items };
+    }
+    case "DEC": {
+      const items = state.items
+        .map((i) => (i.id === action.id ? { ...i, qty: i.qty - 1 } : i))
+        .filter((i) => i.qty > 0);
+      return { ...state, items };
+    }
+    case "REMOVE": {
+      const items = state.items.filter((i) => i.id !== action.id);
+      return { ...state, items };
+    }
+    case "CLEAR":
+      return { items: [], note: "" };
+    case "NOTE":
+      return { ...state, note: action.value };
+    default:
+      return state;
+  }
+}
+
+const currency = (n) => ₹${n.toLocaleString("en-IN")};
+
+function useCart() {
+  const [state, dispatch] = useReducer(cartReducer, { items: [], note: "" });
+  useEffect(() => {
+    const saved = localStorage.getItem("juruw_cart");
+    if (saved) dispatch({ type: "INIT", payload: JSON.parse(saved) });
+  }, []);
+  useEffect(() => {
+    localStorage.setItem("juruw_cart", JSON.stringify(state));
+  }, [state]);
+
+  const total = useMemo(
+    () => state.items.reduce((s, i) => s + i.price * i.qty, 0),
+    [state.items]
+  );
+  const count = useMemo(
+    () => state.items.reduce((s, i) => s + i.qty, 0),
+    [state.items]
+  );
+  return { state, dispatch, total, count };
+}
+
+// ------------------------
+// RAZORPAY PLACEHOLDER (Client-side demo)
+// ------------------------
+/**
+ * LIVE INTEGRATION NOTES (Razorpay):
+ * 1) Create an order on your server: POST /create-order { amountInPaise }
+ * 2) Server returns: { id: order_id, amount, currency }
+ * 3) Then open Razorpay Checkout with that order_id.
+ * 4) Verify signature on your server on success.
+ */
+async function loadRazorpayScript() {
+  if (document.getElementById("rzp-script")) return true;
+  return new Promise((resolve) => {
+    const s = document.createElement("script");
+    s.id = "rzp-script";
+    s.src = "https://checkout.razorpay.com/v1/checkout.js";
+    s.onload = () => resolve(true);
+    s.onerror = () => resolve(false);
+    document.body.appendChild(s);
+  });
+}
+
+async function demoRazorpayPay({ amount, name, email, phone, onSuccess, onFail }) {
+  const ok = await loadRazorpayScript();
+  if (!ok) return onFail?.("Failed to load Razorpay");
+
+  const options = {
+    key: "rzp_test_xxxxxxxx", // TODO: replace with your Razorpay Key ID (test/live)
+    amount: amount * 100, // paise
+    currency: "INR",
+    name: BRAND.name,
+    description: "Order Payment",
+    image: undefined, // optional: your logo
+    // order_id: "order_ABC123", // For live: use server-generated order_id
+    handler: function (response) {
+      // For live: send response to server to verify signature
+      onSuccess?.(response);
+    },
+    prefill: { name, email, contact: phone },
+    notes: { brand: BRAND.name },
+    theme: { color: "#111827" },
+  };
+  const rzp = new window.Razorpay(options);
+  rzp.on("payment.failed", function (resp) {
+    onFail?.(resp.error.description || "Payment failed");
+  });
+  rzp.open();
+}
+
+// ------------------------
+// UI COMPONENTS
+// ------------------------
+function Container({ children, className = "" }) {
+  return <div className={mx-auto w-full max-w-screen-md px-4 ${className}}>{children}</div>;
+}
+
+function Badge({ children }) {
+  return (
+    <span className="inline-flex items-center rounded-full border px-2 py-0.5 text-xs tracking-wide">
+      {children}
+    </span>
+  );
+}
+
+function Nav({ route, setRoute, cartCount }) {
+  const tabs = [
+    { id: "home", label: "Home" },
+    { id: "shop", label: "Shop" },
+    { id: "about", label: "About" },
+    { id: "contact", label: "Contact" },
+    { id: "cart", label: `Cart${cartCount ? ` (${cartCount})` : ""}` },
+  ];
+  return (
+    <div className="sticky top-0 z-50 w-full border-b bg-white/80 backdrop-blur">
+      <Container className="flex items-center justify-between py-3">
+        <div className="flex items-center gap-2">
+          <Logo />
+          <div className="leading-tight">
+            <div className="font-semibold tracking-wider">{BRAND.name}</div>
+            <div className="text-xs text-neutral-500">{BRAND.accent}</div>
+          </div>
+        </div>
+        <div className="flex gap-2 text-sm">
+          {tabs.map((t) => (
+            <button
+              key={t.id}
+              onClick={() => setRoute(t.id)}
+              className={`rounded-full px-3 py-1 transition ${
+                route === t.id ? "bg-black text-white" : "hover:bg-neutral-100"
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      </Container>
+    </div>
+  );
+}
+
+function Logo() {
+  return (
+    <div className="grid h-9 w-9 place-items-center rounded-2xl border bg-neutral-50 text-xs font-bold tracking-wider">
+      JJ
+    </div>
+  );
+}
+
+function Hero({ onShop }) {
+  return (
+    <section className="relative">
+      <div className="absolute inset-0 -z-10 h-[360px] w-full bg-gradient-to-b from-neutral-50 to-white" />
+      <Container className="py-10">
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4 }}
+          className="flex flex-col items-center text-center"
+        >
+          <h1 className="mb-2 text-3xl font-semibold tracking-tight">
+            Handcrafted wooden ramps & standees
+          </h1>
+          <p className="mb-6 max-w-prose text-neutral-600">
+            Minimal design. Smooth edges. Built to last. Perfect for play corners, décor setups and events.
+          </p>
+          <div className="flex gap-2">
+            <button onClick={onShop} className="rounded-2xl bg-black px-5 py-2 text-white">
+              Shop Now
+            </button>
+            <a href="#catalog" onClick={(e)=>{e.preventDefault(); onShop();}} className="rounded-2xl border px-5 py-2">
+              Browse
+            </a>
+          </div>
+        </motion.div>
+      </Container>
+    </section>
+  );
+}
+
+function ProductCard({ p, onAdd }) {
+  return (
+    <motion.div
+      layout
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3 }}
+      className="group overflow-hidden rounded-2xl border"
+    >
+      <div className="aspect-[4/3] w-full overflow-hidden bg-neutral-50">
+        <img src={p.thumb} alt={p.title} className="h-full w-full object-cover transition group-hover:scale-[1.02]" />
+      </div>
+      <div className="space-y-2 p-3">
+        <div className="flex items-start justify-between gap-2">
+          <div className="font-medium">{p.title}</div>
+          <div className="text-right">
+            <div className="font-semibold">{currency(p.price)}</div>
+            {p.mrp && (
+              <div className="text-xs text-neutral-400 line-through">{currency(p.mrp)}</div>
+            )}
+          </div>
+        </div>
+        <p className="text-sm text-neutral-600">{p.desc}</p>
+        <div className="flex flex-wrap gap-1">
+          {p.tags.map((t) => (
+            <Badge key={t}>{t}</Badge>
+          ))}
+        </div>
+        <div className="pt-1">
+          <button onClick={() => onAdd(p)} className="w-full rounded-xl bg-black py-2 text-white">
+            Add to Cart
+          </button>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+function Catalog({ onAdd }) {
+  return (
+    <section id="catalog">
+      <Container className="py-6">
+        <div className="mb-3 flex items-baseline justify-between">
+          <h2 className="text-xl font-semibold">Shop</h2>
+          <div className="text-sm text-neutral-500">{PRODUCTS.length} products</div>
+        </div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {PRODUCTS.map((p) => (
+            <ProductCard key={p.id} p={p} onAdd={onAdd} />
+          ))}
+        </div>
+      </Container>
+    </section>
+  );
+}
+
+function CartView({ cart, onInc, onDec, onRemove, onCheckout }) {
+  return (
+    <Container className="py-6">
+      <h2 className="mb-3 text-xl font-semibold">Your Cart</h2>
+      {cart.items.length === 0 ? (
+        <div className="rounded-2xl border p-6 text-center text-neutral-600">Cart is empty</div>
+      ) : (
+        <div className="space-y-3">
+          {cart.items.map((i) => (
+            <div key={i.id} className="flex items-center justify-between gap-3 rounded-2xl border p-3">
+              <div className="flex items-center gap-3">
+                <img src={i.thumb} alt={i.title} className="h-16 w-20 rounded-xl object-cover" />
+                <div>
+                  <div className="font-medium">{i.title}</div>
+                  <div className="text-sm text-neutral-500">{currency(i.price)} × {i.qty}</div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button onClick={() => onDec(i.id)} className="rounded-lg border px-2 py-1">-</button>
+                <div className="w-6 text-center">{i.qty}</div>
+                <button onClick={() => onInc(i.id)} className="rounded-lg border px-2 py-1">+</button>
+                <button onClick={() => onRemove(i.id)} className="rounded-lg border px-2 py-1 text-sm">Remove</button>
+              </div>
+            </div>
+          ))}
+          <div className="flex items-center justify-between rounded-2xl border p-4">
+            <div className="text-neutral-600">Subtotal</div>
+            <div className="text-lg font-semibold">{currency(cart.total)}</div>
+          </div>
+          <div className="flex justify-end">
+            <button onClick={onCheckout} className="rounded-2xl bg-black px-5 py-2 text-white">Checkout</button>
+          </div>
+        </div>
+      )}
+    </Container>
+  );
+}
+
+function Checkout({ cart, onBack, onOrderPlaced }) {
+  const [form, setForm] = useState({
+    name: "",
+    email: "",
+    phone: "",
+    address: "",
+    city: "",
+    state: "",
+    pincode: "",
+    payment: "prepaid", // 'prepaid' | 'cod'
+  });
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const canPay = cart.items.length > 0 && form.name && form.phone && form.address && form.city && form.state && form.pincode;
+
+  const placeCOD = async () => {
+    setLoading(true);
+    setError("");
+    // Simulate order creation
+    setTimeout(() => {
+      const fakeOrderId = "COD-" + Math.random().toString(36).slice(2, 8).toUpperCase();
+      onOrderPlaced({ id: fakeOrderId, method: "COD" });
+      setLoading(false);
+    }, 600);
+  };
+
+  const payRazorpay = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      await demoRazorpayPay({
+        amount: cart.total,
+        name: form.name,
+        email: form.email,
+        phone: form.phone,
+        onSuccess: (resp) => {
+          const id = "PAY-" + (resp.razorpay_payment_id || Math.random().toString(36).slice(2, 8).toUpperCase());
+          onOrderPlaced({ id, method: "Prepaid" });
+          setLoading(false);
+        },
+        onFail: (msg) => {
+          setError(typeof msg === "string" ? msg : "Payment failed");
+          setLoading(false);
+        },
+      });
+    } catch (e) {
+      setError("Something went wrong");
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Container className="py-6">
+      <button onClick={onBack} className="mb-3 text-sm underline">← Back to cart</button>
+      <h2 className="mb-4 text-xl font-semibold">Checkout</h2>
+      {cart.items.length === 0 ? (
+        <div className="rounded-2xl border p-6 text-center text-neutral-600">Your cart is empty</div>
+      ) : (
+        <div className="grid gap-4">
+          <div className="rounded-2xl border p-4">
+            <h3 className="mb-3 font-medium">Shipping Details</h3>
+            <div className="grid gap-3">
+              <Input label="Full Name" value={form.name} onChange={(v)=>setForm({...form, name:v})} />
+              <div className="grid grid-cols-2 gap-3">
+                <Input label="Email (optional)" value={form.email} onChange={(v)=>setForm({...form, email:v})} />
+                <Input label="Phone" value={form.phone} onChange={(v)=>setForm({...form, phone:v})} />
+              </div>
+              <Input label="Address" value={form.address} onChange={(v)=>setForm({...form, address:v})} />
+              <div className="grid grid-cols-2 gap-3">
+                <Input label="City" value={form.city} onChange={(v)=>setForm({...form, city:v})} />
+                <Input label="State" value={form.state} onChange={(v)=>setForm({...form, state:v})} />
+              </div>
+              <Input label="Pincode" value={form.pincode} onChange={(v)=>setForm({...form, pincode:v})} />
+            </div>
+          </div>
+
+          <div className="rounded-2xl border p-4">
+            <h3 className="mb-3 font-medium">Payment Method</h3>
+            <div className="flex gap-2">
+              <button
+                onClick={()=>setForm({...form, payment: "prepaid"})}
+                className={rounded-xl border px-3 py-2 text-sm ${form.payment==="prepaid"?"bg-black text-white":""}}
+              >
+                Online
+              </button>
+              <button
+                onClick={()=>setForm({...form, payment: "cod"})}
+                className={rounded-xl border px-3 py-2 text-sm ${form.payment==="cod"?"bg-black text-white":""}}
+              >
+                Cash on Delivery
+              </button>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border p-4">
+            <h3 className="mb-3 font-medium">Order Summary</h3>
+            <div className="space-y-2">
+              {cart.items.map((i)=> (
+                <div key={i.id} className="flex items-center justify-between text-sm">
+                  <div className="text-neutral-600">{i.title} × {i.qty}</div>
+                  <div className="font-medium">{currency(i.price * i.qty)}</div>
+                </div>
+              ))}
+              <div className="mt-2 flex items-center justify-between border-t pt-2">
+                <div className="text-neutral-600">Subtotal</div>
+                <div className="font-semibold">{currency(cart.total)}</div>
+              </div>
+            </div>
+          </div>
+
+          {error && <div className="rounded-xl border border-red-300 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
+
+          <button
+            disabled={!canPay || loading}
+            onClick={form.payment === "cod" ? placeCOD : payRazorpay}
+            className="rounded-2xl bg-black px-5 py-3 text-white disabled:opacity-50"
+          >
+            {loading ? "Processing..." : form.payment === "cod" ? "Place COD Order" : Pay ${currency(cart.total)}}
+          </button>
+        </div>
+      )}
+    </Container>
+  );
+}
+
+function Input({ label, value, onChange }) {
+  return (
+    <label className="grid gap-1 text-sm">
+      <span className="text-neutral-600">{label}</span>
+      <input
+        value={value}
+        onChange={(e)=>onChange(e.target.value)}
+        className="rounded-xl border px-3 py-2 outline-none focus:ring-2 focus:ring-black"
+      />
+    </label>
+  );
+}
+
+function About() {
+  return (
+    <Container className="py-8">
+      <h2 className="mb-2 text-xl font-semibold">About {BRAND.name}</h2>
+      <p className="max-w-prose text-neutral-700">
+        We craft smooth, sturdy wooden ramps and standees with a clean, minimalist look. Every piece is sanded by hand and finished with safe coatings for a satin touch.
+      </p>
+      <div className="mt-4 flex flex-wrap gap-2">
+        <Badge>Handcrafted</Badge>
+        <Badge>Sustainably finished</Badge>
+        <Badge>Child-safe edges</Badge>
+        <Badge>Made in India</Badge>
+      </div>
+    </Container>
+  );
+}
+
+function Contact() {
+  return (
+    <Container className="py-8">
+      <h2 className="mb-3 text-xl font-semibold">Contact</h2>
+      <div className="grid gap-3">
+        <a className="rounded-xl border p-3" href="https://instagram.com/" target="_blank" rel="noreferrer">Instagram DM</a>
+        <a className="rounded-xl border p-3" href="https://wa.me/" target="_blank" rel="noreferrer">WhatsApp</a>
+        <a className="rounded-xl border p-3" href="mailto:hello@example.com">Email</a>
+      </div>
+    </Container>
+  );
+}
+
+function Footer() {
+  return (
+    <div className="border-t py-8">
+      <Container className="flex flex-col items-center gap-2 text-center text-sm text-neutral-500">
+        <div>© {new Date().getFullYear()} {BRAND.name}. All rights reserved.</div>
+        <div>
+          <a className="underline" href="#">Terms</a> · <a className="underline" href="#">Privacy</a>
+        </div>
+      </Container>
+    </div>
+  );
+}
+
+export default function App() {
+  const { state: cart, dispatch, total, count } = useCart();
+  const [route, setRoute] = useState("home");
+  const [order, setOrder] = useState(null);
+
+  useEffect(() => {
+    const onHash = () => {
+      const r = window.location.hash.replace("#", "") || "home";
+      setRoute(r);
+    };
+    window.addEventListener("hashchange", onHash);
+    onHash();
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
+
+  const go = (r) => {
+    setRoute(r);
+    window.location.hash = r;
+  };
+
+  const onOrderPlaced = ({ id, method }) => {
+    setOrder({ id, method, total });
+    dispatch({ type: "CLEAR" });
+    go("home");
+  };
+
+  return (
+    <div className="min-h-screen bg-white text-neutral-900">
+      <Nav route={route} setRoute={go} cartCount={count} />
+
+      <AnimatePresence mode="wait">
+        {order && (
+          <motion.div
+            key="order"
+            initial={{ y: -20, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: -10, opacity: 0 }}
+            className="mx-auto mt-3 w-full max-w-screen-md px-4"
+          >
+            <div className="rounded-2xl border bg-green-50 p-4 text-sm text-green-800">
+              Order placed! <b>{order.id}</b> · {order.method} · Amount {currency(order.total)}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {route === "home" && (
+        <>
+          <Hero onShop={() => go("shop")} />
+          <Catalog onAdd={(p)=>dispatch({ type:"ADD", item: p })} />
+          <About />
+          <Contact />
+          <Footer />
+        </>
+      )}
+
+      {route === "shop" && (
+        <>
+          <Catalog onAdd={(p)=>dispatch({ type:"ADD", item: p })} />
+          <Footer />
+        </>
+      )}
+
+      {route === "about" && (
+        <>
+          <About />
+          <Footer />
+        </>
+      )}
+
+      {route === "contact" && (
+        <>
+          <Contact />
+          <Footer />
+        </>
+      )}
+
+      {route === "cart" && (
+        <>
+          <CartView
+            cart={{ ...cart, total }}
+            onInc={(id)=>dispatch({ type:"INC", id })}
+            onDec={(id)=>dispatch({ type:"DEC", id })}
+            onRemove={(id)=>dispatch({ type:"REMOVE", id })}
+            onCheckout={() => go("checkout")}
+          />
+          <Footer />
+        </>
+      )}
+
+      {route === "checkout" && (
+        <>
+          <Checkout
+            cart={{ ...cart, total }}
+            onBack={() => go("cart")}
+            onOrderPlaced={onOrderPlaced}
+          />
+          <Footer />
+        </>
+      )}
+    </div>
+  );
+}
+
+
